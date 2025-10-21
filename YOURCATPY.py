@@ -33,7 +33,7 @@ PROMOCODES_PATH = os.path.join(SAVE_PATH, "promocodes.json")
 os.makedirs(USERS_PATH, exist_ok=True)
 
 # Токены из переменных окружения Railway
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = '8429919809:AAE5lMwVmH86X58JFDxYRPA3bDbFMgSgtsw'
 ADMIN_ID = int(os.getenv("ADMIN_ID", "5531546741"))
 PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN")
 
@@ -1124,3 +1124,4 @@ def main() -> None:
 if __name__ == '__main__':
 
     main()
+
