@@ -7,15 +7,24 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
-# Настройка логирования
+# Настройка логирования для Railway
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler()  # Вывод в stdout для Railway
+    ]
 )
 logger = logging.getLogger(__name__)
 
-# Настройка путей для облака
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Настройка путей для облада
+if os.path.exists('/app'):
+    # Production на Railway
+    SCRIPT_DIR = '/app'
+else:
+    # Локальная разработка
+    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 SAVE_PATH = SCRIPT_DIR
 USERS_PATH = os.path.join(SAVE_PATH, "users")
 PROMOCODES_PATH = os.path.join(SAVE_PATH, "promocodes.json")
@@ -23,11 +32,17 @@ PROMOCODES_PATH = os.path.join(SAVE_PATH, "promocodes.json")
 # Создаем папки если не существуют
 os.makedirs(USERS_PATH, exist_ok=True)
 
-# Токены из переменных окружения
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8429919809:AAE5lMwVmH86X58JFDxYRPA3bDbFMgSgtsw")
+# Токены из переменных окружения Railway
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "5531546741"))
-PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "")
+PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN")
 
+# Проверка обязательных переменных
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN не установлен!")
+    exit(1)
+
+# ... остальной код без изменений ...
 # Названия котов (имена файлов)
 CAT_IMAGES = [
     "cat1.jpg", "cat2.jpg", "cat3.jpg", "cat4.jpg", "cat5.jpg", 
@@ -1107,4 +1122,5 @@ def main() -> None:
     application.run_polling()
 
 if __name__ == '__main__':
+
     main()
