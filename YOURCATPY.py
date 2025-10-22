@@ -3,52 +3,243 @@ import logging
 import json
 import random
 import asyncio
+import requests
+import threading
+import time
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from flask import Flask
 from threading import Thread
-import time
+import urllib3
+from concurrent.futures import ThreadPoolExecutor
 
-# === Flask сервер для поддержания активности ===
-app = Flask('')
+# Отключаем предупреждения SSL
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-@app.route('/')
-def home():
-    return "🐱 Kitty City Bot is running!"
-
-def run_flask():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-
-# === Настройка логирования ===
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
-
-# === Запускаем Flask сервер ===
-keep_alive()
-
-# === Токены ===
+# === КОНФИГУРАЦИЯ ===
+REPL_OWNER = "timabrilevich"
+REPL_SLUG = "KittyCitySuperBot-1"
+YANDEX_TOKEN = "y0__xDo1ejABhjblgMgr8ek6xT0N1yRgkT9l_OLaTYIDPPD5wSscA"
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8429919809:AAE5lMwVmH86X58JFDxYRPA3bDbFMgSgtsw")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "5531546741"))
 
-# === База данных в памяти (для бесплатного Replit) ===
+print(f"🚀 Replit Info: {REPL_OWNER}.{REPL_SLUG}")
+
+# === URL для самопингов ===
+SELF_URLS = [
+    f"https://{REPL_SLUG}.{REPL_OWNER}.repl.co/",
+    f"https://{REPL_SLUG}.{REPL_OWNER}.repl.co/ping", 
+    f"https://{REPL_SLUG}.{REPL_OWNER}.repl.co/health",
+    f"https://{REPL_SLUG}.{REPL_OWNER}.repl.co/status",
+    f"https://{REPL_SLUG}.{REPL_OWNER}.repl.co/api/v1/keepalive"
+]
+
+# === HYPER-PING СЕРВИС ===
+app = Flask(__name__)
+
+@app.route('/')
+def home(): 
+    return f"🐱 Kitty Bot 24/7 | {datetime.now().strftime('%H:%M:%S')} | Users: {len(users_db)}"
+
+@app.route('/ping')
+def ping(): return "pong"
+
+@app.route('/health')
+def health(): return "OK"
+
+@app.route('/status')
+def status(): return "🟢 ONLINE"
+
+@app.route('/api/v1/keepalive')
+def keepalive(): return {"status": "active", "timestamp": datetime.now().isoformat()}
+
+@app.route('/api/v1/stats')
+def stats(): 
+    return {
+        "users": len(users_db),
+        "uptime": str(datetime.now() - start_time),
+        "last_ping": last_ping_time.strftime('%H:%M:%S'),
+        "ping_count": ping_count
+    }
+
+# Глобальные переменные для пингов
+start_time = datetime.now()
+last_ping_time = datetime.now()
+ping_count = 0
 users_db = {}
 promocodes_db = {}
-bot_stats = {
-    "total_users": 0,
-    "total_care_actions": 0,
-    "start_time": datetime.now().isoformat()
-}
 
-# === Конфигурация ===
+# === АГРЕССИВНЫЕ ПИНГИ ===
+def hyper_ping_worker(url):
+    """Рабочий для пинга одного URL"""
+    try:
+        response = requests.get(url, timeout=10, verify=False)
+        return f"✅ {url} - {response.status_code}"
+    except Exception as e:
+        return f"❌ {url} - {str(e)}"
+
+def hyper_pinging():
+    """ГИПЕР-АГРЕССИВНЫЕ ПИНГИ 24/7"""
+    global last_ping_time, ping_count
+    
+    # ОЧЕНЬ частые пинги - каждые 30-90 секунд!
+    ping_intervals = [30, 45, 60, 75, 90]  # Случайные интервалы
+    
+    while True:
+        try:
+            current_interval = random.choice(ping_intervals)
+            
+            # Внешние пинги для сетевой активности
+            external_urls = [
+                "https://www.google.com",
+                "https://api.telegram.org",
+                "https://yandex.ru",
+                "https://github.com",
+                "https://stackoverflow.com",
+                "https://httpbin.org/get",
+                "https://jsonplaceholder.typicode.com/posts/1"
+            ]
+            
+            all_urls = SELF_URLS + external_urls
+            
+            # Многопоточные пинги для скорости
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                results = list(executor.map(hyper_ping_worker, all_urls))
+            
+            ping_count += 1
+            last_ping_time = datetime.now()
+            
+            # Логируем каждые 10 пингов
+            if ping_count % 10 == 0:
+                success_count = sum(1 for r in results if '✅' in r)
+                print(f"🎯 Пинг #{ping_count} | Успешно: {success_count}/{len(all_urls)} | Время: {last_ping_time.strftime('%H:%M:%S')}")
+            
+            # Случайная пауза между 30 и 90 секундами
+            time.sleep(current_interval)
+            
+        except Exception as e:
+            print(f"❌ Ошибка пинга: {e}")
+            time.sleep(60)  # Пауза при ошибке
+
+def start_hyper_ping():
+    """Запуск гипер-пингов в отдельном потоке"""
+    ping_thread = Thread(target=hyper_pinging)
+    ping_thread.daemon = True
+    ping_thread.start()
+    print("🚀 HYPER-PING запущен! Интервалы: 30-90 секунд")
+
+# === ЯНДЕКС ДИСК ХРАНИЛИЩЕ ===
+class YandexDiskStorage:
+    def __init__(self):
+        self.token = YANDEX_TOKEN
+        self.base_url = "https://cloud-api.yandex.net/v1/disk/resources"
+        self.headers = {"Authorization": f"OAuth {self.token}"}
+        
+        # Создаем папку при инициализации
+        self.setup_folder()
+    
+    def setup_folder(self):
+        """Создает папку для бота на Яндекс Диске"""
+        try:
+            # Создаем основную папку
+            response = requests.put(
+                f"{self.base_url}?path=/kitty_bot", 
+                headers=self.headers
+            )
+            
+            # Создаем подпапку для пользователей
+            response2 = requests.put(
+                f"{self.base_url}?path=/kitty_bot/users", 
+                headers=self.headers
+            )
+            
+            if response.status_code in [201, 409]:
+                print("✅ Папка kitty_bot готова на Яндекс Диске!")
+                return True
+            else:
+                print(f"⚠️ Не удалось создать папку: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Ошибка создания папки: {e}")
+            return False
+    
+    def save_user_data(self, user_data):
+        try:
+            user_id = user_data["user_id"]
+            filename = f"kitty_bot/users/{user_id}.json"
+            
+            # Создаем временный файл
+            temp_file = f"temp_{user_id}.json"
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                json.dump(user_data, f, ensure_ascii=False, indent=2, default=str)
+            
+            # Получаем URL для загрузки
+            upload_url = f"{self.base_url}/upload?path={filename}&overwrite=true"
+            response = requests.get(upload_url, headers=self.headers)
+            
+            if response.status_code == 200:
+                upload_data = response.json()
+                
+                # Загружаем файл
+                with open(temp_file, 'rb') as f:
+                    upload_response = requests.put(upload_data['href'], files={'file': f})
+                
+                os.remove(temp_file)
+                
+                if upload_response.status_code == 201:
+                    print(f"💾 Сохранен пользователь {user_id} в Яндекс Диск")
+                    return True
+                else:
+                    print(f"❌ Ошибка загрузки файла: {upload_response.status_code}")
+                    return False
+            else:
+                print(f"❌ Не удалось получить URL для загрузки: {response.status_code}")
+                os.remove(temp_file)
+                return False
+            
+        except Exception as e:
+            print(f"❌ Ошибка сохранения Яндекс: {e}")
+            if os.path.exists(f"temp_{user_id}.json"):
+                os.remove(f"temp_{user_id}.json")
+            return False
+    
+    def load_user_data(self, user_id):
+        try:
+            filename = f"kitty_bot/users/{user_id}.json"
+            download_url = f"{self.base_url}/download?path={filename}"
+            response = requests.get(download_url, headers=self.headers)
+            
+            if response.status_code == 200:
+                download_data = response.json()
+                file_response = requests.get(download_data['href'])
+                
+                if file_response.status_code == 200:
+                    user_data = json.loads(file_response.text)
+                    print(f"📥 Загружен пользователь {user_id} из Яндекс Диска")
+                    return user_data
+            
+            print(f"⚠️ Пользователь {user_id} не найден в Яндекс Диске")
+            return None
+            
+        except Exception as e:
+            print(f"❌ Ошибка загрузки Яндекс: {e}")
+            return None
+    
+    def user_exists(self, user_id):
+        try:
+            filename = f"kitty_bot/users/{user_id}.json"
+            url = f"{self.base_url}?path={filename}"
+            response = requests.get(url, headers=self.headers)
+            return response.status_code == 200
+        except:
+            return False
+
+# Инициализация хранилища
+storage = YandexDiskStorage()
+
+# === ДАННЫЕ ИГРЫ ===
 CAT_IMAGES = ["cat1.jpg", "cat2.jpg", "cat3.jpg", "cat4.jpg", "cat5.jpg"]
 
 DEFAULT_USER_DATA = {
@@ -89,24 +280,38 @@ BEDS = {
     'bed2': {'name': 'bed2', 'price': 200, 'emoji': '🏠', 'display_name': 'Лежанка 2'},
 }
 
-# === Функции базы данных ===
-def user_exists(user_id):
-    return str(user_id) in users_db
-
+# === ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ ===
 def get_user_data(user_id):
-    try:
-        return users_db.get(str(user_id))
-    except Exception as e:
-        logger.error(f"Ошибка чтения пользователя {user_id}: {e}")
-        return None
+    # Сначала пробуем из памяти
+    if str(user_id) in users_db:
+        return users_db[str(user_id)]
+    
+    # Потом из Яндекс Диска
+    data = storage.load_user_data(user_id)
+    if data:
+        users_db[str(user_id)] = data
+    return data
 
 def save_user_data(user_data):
     try:
-        users_db[str(user_data["user_id"])] = user_data
+        user_id = user_data["user_id"]
+        users_db[str(user_id)] = user_data
+        
+        # Сохраняем в Яндекс Диск (асинхронно)
+        def async_save():
+            storage.save_user_data(user_data)
+        
+        save_thread = Thread(target=async_save)
+        save_thread.daemon = True
+        save_thread.start()
+        
         return True
     except Exception as e:
-        logger.error(f"Ошибка сохранения пользователя {user_data['user_id']}: {e}")
+        print(f"❌ Ошибка сохранения: {e}")
         return False
+
+def user_exists(user_id):
+    return str(user_id) in users_db or storage.user_exists(user_id)
 
 def create_new_user(user_id, username):
     user_data = DEFAULT_USER_DATA.copy()
@@ -120,7 +325,6 @@ def create_new_user(user_id, username):
     user_data["cat"]["photo_index"] = random.randint(0, len(CAT_IMAGES) - 1)
     
     if save_user_data(user_data):
-        bot_stats["total_users"] = len(users_db)
         return user_data
     return None
 
@@ -133,19 +337,7 @@ def get_or_create_user(user_id, username):
 def get_all_users():
     return list(users_db.values())
 
-# === Функции промокодов ===
-def load_promocodes():
-    return promocodes_db.copy()
-
-def save_promocodes(promocodes):
-    try:
-        promocodes_db.clear()
-        promocodes_db.update(promocodes)
-        return True
-    except:
-        return False
-
-# === Основные функции бота ===
+# === ОСНОВНЫЕ ФУНКЦИИ БОТА ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     user_data = get_or_create_user(user.id, user.username or user.first_name)
@@ -304,7 +496,6 @@ async def handle_care_action(query, context: ContextTypes.DEFAULT_TYPE, action):
     user_data['daily_care_count'] += 1
     cat['care_count'] += 1
     cat['last_update'] = datetime.now().isoformat()
-    bot_stats["total_care_actions"] += 1
     
     cat['exp'] += 1
     if cat['exp'] >= cat['level'] * 5:
@@ -625,125 +816,7 @@ async def show_leaderboard(query, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "💌 ОБРАТНАЯ СВЯЗЬ:\n\n"
-        "Если у тебя есть предложения или ты нашел ошибку, "
-        "напиши нам: @KittyCitySupport\n\n"
-        "Мы всегда рады услышать твое мнение! 💖"
-    )
-
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_user.id != ADMIN_ID:
-        return
-    
-    uptime = datetime.now() - datetime.fromisoformat(bot_stats["start_time"])
-    hours = uptime.total_seconds() / 3600
-    
-    stats_text = (
-        f"📊 СТАТИСТИКА БОТА:\n\n"
-        f"👥 Всего пользователей: {bot_stats['total_users']}\n"
-        f"❤️ Всего уходов: {bot_stats['total_care_actions']}\n"
-        f"⏰ Аптайм: {hours:.1f} часов\n"
-        f"🐱 Активных котиков: {len(users_db)}"
-    )
-    
-    await update.message.reply_text(stats_text)
-
-# === Промокоды ===
-async def use_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not context.args:
-        await update.message.reply_text("❌ Использование: /promo <код>")
-        return
-    
-    promo_code = context.args[0].upper()
-    user_id = update.effective_user.id
-    user_data = get_user_data(user_id)
-    
-    if not user_data:
-        await update.message.reply_text("❌ Ошибка загрузки профиля.")
-        return
-    
-    promocodes = load_promocodes()
-    
-    if promo_code not in promocodes:
-        await update.message.reply_text("❌ Промокод не найден или недействителен!")
-        return
-    
-    promo_data = promocodes[promo_code]
-    
-    if 'expires' in promo_data:
-        expires = datetime.fromisoformat(promo_data['expires'])
-        if datetime.now() > expires:
-            await update.message.reply_text("❌ Срок действия промокода истек!")
-            return
-    
-    if promo_data.get('used', 0) >= promo_data.get('limit', 1):
-        await update.message.reply_text("❌ Промокод уже использован максимальное количество раз!")
-        return
-    
-    if promo_code in user_data['used_promocodes']:
-        await update.message.reply_text("❌ Ты уже использовал этот промокод!")
-        return
-    
-    reward = promo_data['reward']
-    user_data['coins'] += reward
-    user_data['used_promocodes'].append(promo_code)
-    
-    promo_data['used'] = promo_data.get('used', 0) + 1
-    promocodes[promo_code] = promo_data
-    
-    if save_user_data(user_data) and save_promocodes(promocodes):
-        await update.message.reply_text(f"🎉 Промокод активирован! Получено {reward} монет!")
-    else:
-        await update.message.reply_text("❌ Ошибка активации промокода!")
-
-async def new_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("❌ Эта команда только для администратора!")
-        return
-    
-    if len(context.args) < 2:
-        await update.message.reply_text("❌ Использование: /newpromo <код> <награда> [лимит] [дни]")
-        return
-    
-    promo_code = context.args[0].upper()
-    try:
-        reward = int(context.args[1])
-        limit = int(context.args[2]) if len(context.args) > 2 else 1
-        days = int(context.args[3]) if len(context.args) > 3 else 30
-    except ValueError:
-        await update.message.reply_text("❌ Неверный формат чисел!")
-        return
-    
-    promocodes = load_promocodes()
-    
-    if promo_code in promocodes:
-        await update.message.reply_text("❌ Такой промокод уже существует!")
-        return
-    
-    promo_data = {
-        'reward': reward,
-        'limit': limit,
-        'used': 0,
-        'created': datetime.now().isoformat(),
-        'expires': (datetime.now() + timedelta(days=days)).isoformat()
-    }
-    
-    promocodes[promo_code] = promo_data
-    
-    if save_promocodes(promocodes):
-        await update.message.reply_text(
-            f"✅ Промокод создан!\n"
-            f"Код: {promo_code}\n"
-            f"Награда: {reward} монет\n"
-            f"Лимит: {limit} использований\n"
-            f"Действует: {days} дней"
-        )
-    else:
-        await update.message.reply_text("❌ Ошибка создания промокода!")
-
-# === Обработчик кнопок ===
+# === ОБРАБОТЧИК КНОПОК ===
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -798,77 +871,47 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif data == 'leaderboard':
         await show_leaderboard(query, context)
 
-# === Автообновление показателей ===
-async def auto_update_stats(context: ContextTypes.DEFAULT_TYPE):
-    users = get_all_users()
-    updated_count = 0
-    
-    for user_data in users:
-        try:
-            if not user_data or 'cat' not in user_data:
-                continue
-            
-            cat = user_data['cat']
-            if not cat.get('last_update'):
-                continue
-                
-            last_update = datetime.fromisoformat(cat['last_update'])
-            
-            if datetime.now() - last_update > timedelta(hours=6):  # Увеличили до 6 часов для оптимизации
-                cat['hunger'] = max(0, cat['hunger'] - 1)
-                cat['cleanliness'] = max(0, cat['cleanliness'] - 1)
-                cat['mood'] = max(0, cat['mood'] - 1)
-                
-                if all(stat == 0 for stat in [cat['hunger'], cat['cleanliness'], cat['mood'], cat['health']]):
-                    cat.update({
-                        'hunger': 5,
-                        'cleanliness': 5,
-                        'mood': 5,
-                        'health': 5,
-                        'level': max(1, cat['level'] - 1),
-                        'exp': 0
-                    })
-                
-                cat['last_update'] = datetime.now().isoformat()
-                
-                if save_user_data(user_data):
-                    updated_count += 1
-                    
-        except Exception as e:
-            continue
-    
-    if updated_count > 0:
-        logger.info(f"Автообновление: обновлено {updated_count} пользователей")
+# === ЗАПУСК ВСЕГО ===
+def run_flask():
+    """Запуск Flask сервера"""
+    app.run(host='0.0.0.0', port=8080, debug=False)
 
-# === Основная функция ===
+def keep_alive():
+    """Запуск всего что нужно для 24/7"""
+    # 1. Flask сервер
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # 2. Гипер-пинги (через 10 секунд после запуска)
+    time.sleep(10)
+    start_hyper_ping()
+    
+    print("✅ Все системы запущены для 24/7 работы!")
+
+# Запускаем ВСЕ сразу
+keep_alive()
+
+# === ОСНОВНАЯ ФУНКЦИЯ ===
 def main() -> None:
-    print("🚀 Запуск Kitty City Bot на Replit...")
-    print("💾 Используется база данных в памяти")
-    print(f"🤖 Токен бота: {'установлен' if BOT_TOKEN else 'НЕ УСТАНОВЛЕН'}")
+    print("🚀 ЗАПУСК KITTY BOT 24/7 MODE")
+    print(f"⏰ Время начала: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"🎯 Replit: {REPL_OWNER}.{REPL_SLUG}")
+    print("🎯 Цель: 20-24 часа автономной работы")
     
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
     
     # Команды
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("feedback", feedback))
-    application.add_handler(CommandHandler("promo", use_promo_command))
-    application.add_handler(CommandHandler("newpromo", new_promo_command))
-    application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(CommandHandler("status", lambda u,c: u.message.reply_text("🟢 Бот работает 24/7!")))
     
     # Обработчики кнопок
     application.add_handler(CallbackQueryHandler(button_handler))
     
-    # Автоматическое обновление показателей каждые 6 часов
-    job_queue = application.job_queue
-    if job_queue:
-        job_queue.run_repeating(auto_update_stats, interval=21600, first=10)
+    print("✅ Бот запущен в режиме 24/7!")
+    print("🔧 HYPER-PING активен каждые 30-90 секунд")
     
-    print("✅ Бот успешно запущен!")
-    print("🐱 Kitty City Bot готов к работе!")
-    print(f"👥 Пользователей в базе: {len(users_db)}")
-    
-    # Запускаем бота
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True
