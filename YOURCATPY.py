@@ -4,52 +4,53 @@ import json
 import random
 import asyncio
 from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from flask import Flask
+from threading import Thread
+import time
 
-# Настройка логирования для Railway
+# === Flask сервер для поддержания активности ===
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "🐱 Kitty City Bot is running!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+
+# === Настройка логирования ===
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    handlers=[
-        logging.StreamHandler()  # Вывод в stdout для Railway
-    ]
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Настройка путей для облада
-if os.path.exists('/app'):
-    # Production на Railway
-    SCRIPT_DIR = '/app'
-else:
-    # Локальная разработка
-    SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# === Запускаем Flask сервер ===
+keep_alive()
 
-SAVE_PATH = SCRIPT_DIR
-USERS_PATH = os.path.join(SAVE_PATH, "users")
-PROMOCODES_PATH = os.path.join(SAVE_PATH, "promocodes.json")
-
-# Создаем папки если не существуют
-os.makedirs(USERS_PATH, exist_ok=True)
-
-# Токены из переменных окружения Railway
-BOT_TOKEN = '8429919809:AAE5lMwVmH86X58JFDxYRPA3bDbFMgSgtsw'
+# === Токены ===
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8429919809:AAE5lMwVmH86X58JFDxYRPA3bDbFMgSgtsw")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "5531546741"))
-PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN")
 
-# Проверка обязательных переменных
-if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN не установлен!")
-    exit(1)
+# === База данных в памяти (для бесплатного Replit) ===
+users_db = {}
+promocodes_db = {}
+bot_stats = {
+    "total_users": 0,
+    "total_care_actions": 0,
+    "start_time": datetime.now().isoformat()
+}
 
-# ... остальной код без изменений ...
-# Названия котов (имена файлов)
-CAT_IMAGES = [
-    "cat1.jpg", "cat2.jpg", "cat3.jpg", "cat4.jpg", "cat5.jpg", 
-    "cat7.jpg", "cat8.jpg", "cat9.jpg"
-]
+# === Конфигурация ===
+CAT_IMAGES = ["cat1.jpg", "cat2.jpg", "cat3.jpg", "cat4.jpg", "cat5.jpg"]
 
-# Стандартные настройки нового пользователя
 DEFAULT_USER_DATA = {
     "user_id": None,
     "username": "",
@@ -75,67 +76,36 @@ DEFAULT_USER_DATA = {
     "last_care_date": None
 }
 
-# Имена для котов
-CAT_NAME_OPTIONS = [
-    "Барсик", "Мурзик", "Васька", "Рыжик", "Снежок", "Пушок", "Кузя", "Тигра", 
-    "Луна", "Симба", "Оскар", "Гарфилд", "Том", "Феликс", "Чарли", "Макс"
-]
+CAT_NAME_OPTIONS = ["Барсик", "Мурзик", "Васька", "Рыжик", "Снежок", "Пушок", "Кузя"]
 
-# Игрушки
 TOYS = {
-    'i1': {'name': 'i1', 'price': 20, 'emoji': '🎾', 'display_name': 'Мячик i1'},
-    'i2': {'name': 'i2', 'price': 30, 'emoji': '🐟', 'display_name': 'Рыбка i2'},
-    'i3': {'name': 'i3', 'price': 40, 'emoji': '🎯', 'display_name': 'Мишень i3'},
-    'i4': {'name': 'i4', 'price': 50, 'emoji': '🧶', 'display_name': 'Клубок i4'},
-    'i5': {'name': 'i5', 'price': 60, 'emoji': '🐭', 'display_name': 'Мышка i5'},
-    'i6': {'name': 'i6', 'price': 70, 'emoji': '🎁', 'display_name': 'Сюрприз i6'},
-    'i7': {'name': 'i7', 'price': 80, 'emoji': '🌟', 'display_name': 'Звезда i7'},
-    'i8': {'name': 'i8', 'price': 100, 'emoji': '👑', 'display_name': 'Корона i8'}
+    'i1': {'name': 'i1', 'price': 20, 'emoji': '🎾', 'display_name': 'Мячик'},
+    'i2': {'name': 'i2', 'price': 30, 'emoji': '🐟', 'display_name': 'Рыбка'},
+    'i3': {'name': 'i3', 'price': 40, 'emoji': '🎯', 'display_name': 'Мишень'},
 }
 
-# Лежанки
 BEDS = {
-    'lezanka1': {'name': 'lezanka1', 'price': 150, 'emoji': '🛏️', 'display_name': 'Лежанка 1'},
-    'lezanka2': {'name': 'lezanka2', 'price': 200, 'emoji': '🏠', 'display_name': 'Лежанка 2'},
-    'lezanka3': {'name': 'lezanka3', 'price': 250, 'emoji': '🛋️', 'display_name': 'Лежанка 3'},
-    'lezanka4': {'name': 'lezanka4', 'price': 300, 'emoji': '🏰', 'display_name': 'Лежанка 4'},
-    'lezanka5': {'name': 'lezanka5', 'price': 400, 'emoji': '💎', 'display_name': 'Лежанка 5'}
+    'bed1': {'name': 'bed1', 'price': 150, 'emoji': '🛏️', 'display_name': 'Лежанка 1'},
+    'bed2': {'name': 'bed2', 'price': 200, 'emoji': '🏠', 'display_name': 'Лежанка 2'},
 }
 
-# Пакеты монет для покупки
-COIN_PACKAGES = {
-    'coins_100': {'coins': 100, 'price': 49, 'currency': 'RUB', 'emoji': '⭐', 'display_name': '100 монет'},
-    'coins_250': {'coins': 250, 'price': 99, 'currency': 'RUB', 'emoji': '🌟🌟', 'display_name': '250 монет'},
-    'coins_500': {'coins': 500, 'price': 179, 'currency': 'RUB', 'emoji': '🌟🌟🌟', 'display_name': '500 монет'},
-    'coins_1000': {'coins': 1000, 'price': 299, 'currency': 'RUB', 'emoji': '💫', 'display_name': '1000 монет'},
-}
-
-# Функции для работы с JSON
-def get_user_file_path(user_id):
-    return os.path.join(USERS_PATH, f"{user_id}.json")
-
+# === Функции базы данных ===
 def user_exists(user_id):
-    return os.path.exists(get_user_file_path(user_id))
+    return str(user_id) in users_db
 
 def get_user_data(user_id):
-    file_path = get_user_file_path(user_id)
-    if not os.path.exists(file_path):
-        return None
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        return users_db.get(str(user_id))
     except Exception as e:
-        logger.error(f"Ошибка чтения файла пользователя {user_id}: {e}")
+        logger.error(f"Ошибка чтения пользователя {user_id}: {e}")
         return None
 
 def save_user_data(user_data):
     try:
-        file_path = get_user_file_path(user_data["user_id"])
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(user_data, f, ensure_ascii=False, indent=2)
+        users_db[str(user_data["user_id"])] = user_data
         return True
     except Exception as e:
-        logger.error(f"Ошибка сохранения файла пользователя {user_data['user_id']}: {e}")
+        logger.error(f"Ошибка сохранения пользователя {user_data['user_id']}: {e}")
         return False
 
 def create_new_user(user_id, username):
@@ -150,6 +120,7 @@ def create_new_user(user_id, username):
     user_data["cat"]["photo_index"] = random.randint(0, len(CAT_IMAGES) - 1)
     
     if save_user_data(user_data):
+        bot_stats["total_users"] = len(users_db)
         return user_data
     return None
 
@@ -159,161 +130,22 @@ def get_or_create_user(user_id, username):
         return user_data
     return create_new_user(user_id, username)
 
-def get_cat_photo_path(user_data):
-    if not user_data or "cat" not in user_data:
-        return None
-    photo_index = user_data["cat"].get("photo_index", 0)
-    if 0 <= photo_index < len(CAT_IMAGES):
-        photo_filename = CAT_IMAGES[photo_index]
-        return os.path.join(SCRIPT_DIR, photo_filename)
-    return None
+def get_all_users():
+    return list(users_db.values())
 
-async def send_cat_photo(chat_id, context, user_data, caption=""):
-    photo_path = get_cat_photo_path(user_data)
-    
-    if photo_path and os.path.exists(photo_path):
-        try:
-            with open(photo_path, 'rb') as photo:
-                await context.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=photo,
-                    caption=caption
-                )
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка отправки фото: {e}")
-            return False
-    else:
-        logger.error(f"Фото не найдено по пути: {photo_path}")
+# === Функции промокодов ===
+def load_promocodes():
+    return promocodes_db.copy()
+
+def save_promocodes(promocodes):
+    try:
+        promocodes_db.clear()
+        promocodes_db.update(promocodes)
+        return True
+    except:
         return False
 
-# Функции для работы с платежами
-async def buy_coins_menu(query, context: ContextTypes.DEFAULT_TYPE):
-    """Меню покупки монет"""
-    user_id = query.from_user.id
-    user_data = get_user_data(user_id)
-    
-    if not user_data:
-        await query.answer("❌ Ошибка загрузки профиля.")
-        return
-    
-    keyboard = []
-    for package_id, package in COIN_PACKAGES.items():
-        price_text = f"{package['price']} {package['currency']}"
-        button_text = f"{package['emoji']} {package['display_name']} - {price_text}"
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f'buy_{package_id}')])
-    
-    keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data='earn_coins')])
-    
-    await query.edit_message_text(
-        f"💎 ПОКУПКА МОНЕТ:\n\n"
-        f"💰 Твои монетки: {user_data['coins']}\n\n"
-        f"🎁 Выбери пакет монет:\n\n"
-        f"💳 Оплата банковской картой\n"
-        f"🔒 Безопасно через Telegram\n"
-        f"⚡ Монетки приходят мгновенно!",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-async def start_payment(update: Update, context: ContextTypes.DEFAULT_TYPE, package_id: str):
-    """Начинает процесс оплаты"""
-    if not PAYMENT_PROVIDER_TOKEN:
-        await update.message.reply_text(
-            "❌ Платежи временно недоступны.\n"
-            "Приносим извинения за неудобства!"
-        )
-        return
-    
-    if package_id not in COIN_PACKAGES:
-        await update.message.reply_text("❌ Такого пакета не существует!")
-        return
-    
-    package = COIN_PACKAGES[package_id]
-    user_id = update.effective_user.id
-    
-    # Сохраняем информацию о покупке
-    context.user_data['pending_payment'] = {
-        'package_id': package_id,
-        'coins': package['coins'],
-        'price': package['price'],
-        'currency': package['currency'],
-        'user_id': user_id
-    }
-    
-    # Создаем инвойс для оплаты
-    title = f"Покупка {package['coins']} монет"
-    description = f"Пакет {package['display_name']} для Kitty City"
-    payload = f"coin_purchase_{user_id}_{package_id}"
-    currency = package['currency']
-    prices = [LabeledPrice(f"{package['coins']} монет", package['price'] * 100)]
-    
-    try:
-        await context.bot.send_invoice(
-            chat_id=update.effective_chat.id,
-            title=title,
-            description=description,
-            payload=payload,
-            provider_token=PAYMENT_PROVIDER_TOKEN,
-            currency=currency,
-            prices=prices,
-            need_name=False,
-            need_phone_number=False,
-            need_email=False,
-            need_shipping_address=False,
-            is_flexible=False,
-            start_parameter=package_id
-        )
-    except Exception as e:
-        logger.error(f"Ошибка создания инвойса: {e}")
-        await update.message.reply_text("❌ Ошибка создания платежа. Попробуйте позже.")
-
-async def pre_checkout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик предварительной проверки платежа"""
-    query = update.pre_checkout_query
-    try:
-        await query.answer(ok=True)
-        logger.info(f"Pre-checkout approved for user {query.from_user.id}")
-    except Exception as e:
-        logger.error(f"Pre-checkout error: {e}")
-        await query.answer(ok=False, error_message="Ошибка обработки платежа")
-
-async def successful_payment_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик успешного платежа"""
-    payment = update.message.successful_payment
-    user_id = update.effective_user.id
-    
-    pending_payment = context.user_data.get('pending_payment', {})
-    
-    if not pending_payment or pending_payment['user_id'] != user_id:
-        logger.error(f"No pending payment found for user {user_id}")
-        await update.message.reply_text("❌ Ошибка обработки платежа. Свяжитесь с поддержкой.")
-        return
-    
-    package_id = pending_payment['package_id']
-    coins_to_add = pending_payment['coins']
-    
-    user_data = get_user_data(user_id)
-    if not user_data:
-        await update.message.reply_text("❌ Ошибка загрузки профиля.")
-        return
-    
-    # Начисляем монеты
-    user_data['coins'] += coins_to_add
-    
-    if save_user_data(user_data):
-        context.user_data.pop('pending_payment', None)
-        
-        await update.message.reply_text(
-            f"🎉 Оплата прошла успешно!\n"
-            f"💎 Получено: {coins_to_add} монет\n"
-            f"💰 Теперь у тебя: {user_data['coins']} монет\n\n"
-            f"Спасибо за покупку! 💖"
-        )
-        logger.info(f"Successful payment: user {user_id} received {coins_to_add} coins")
-    else:
-        await update.message.reply_text("❌ Ошибка начисления монет. Свяжитесь с поддержкой.")
-
-# Основные функции бота
+# === Основные функции бота ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     user_data = get_or_create_user(user.id, user.username or user.first_name)
@@ -324,22 +156,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"Неужели котик? Это твой новый друг - {user_data['cat']['name']}!\n\n"
             f"Ухаживай за ним, зарабатывай монетки и покупай игрушки!\n\n"
             f"💫 За уход за котиком: +3 монеты\n"
-            f"⭐ Покупай монеты за реальные деньги\n"
-            f"💫 Не забывай следить за показателями котика!"
+            f"⭐ Выполняй задания для монет\n"
+            f"💫 Следи за показателями котика!"
         )
         
-        photo_sent = await send_cat_photo(update.effective_chat.id, context, user_data, caption)
-        
-        if not photo_sent:
-            await update.message.reply_text(
-                caption,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📦 ОТКРЫТЬ КОРОБОЧКУ", callback_data='open_box')]])
-            )
-        else:
-            await update.message.reply_text(
-                "📦 Нажми кнопку ниже чтобы открыть коробочку!",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📦 ОТКРЫТЬ КОРОБОЧКУ", callback_data='open_box')]])
-            )
+        await update.message.reply_text(
+            caption,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📦 ОТКРЫТЬ КОРОБОЧКУ", callback_data='open_box')]])
+        )
     else:
         await update.message.reply_text("❌ Ошибка создания профиля. Попробуйте снова.")
 
@@ -352,26 +176,16 @@ async def open_box(query, context: ContextTypes.DEFAULT_TYPE):
         return
     
     caption = (
-        f"🎉 А вот и твой лучший друг!\n\n"
-        f"Теперь ты можешь ухаживать за {user_data['cat']['name']} в меню ухода!\n\n"
+        f"🎉 А вот и твой лучший друг - {user_data['cat']['name']}!\n\n"
+        f"Теперь ты можешь ухаживать за ним в меню ухода!\n\n"
         "🪙 Зарабатывай монетки, ухаживая за котиком!\n"
-        "⭐ Покупай монеты за реальные деньги!\n"
         "🎁 Покупай игрушки и улучшай своего котика!"
     )
     
-    photo_sent = await send_cat_photo(query.message.chat_id, context, user_data, caption)
-    
-    if not photo_sent:
-        await query.edit_message_text(
-            caption,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data='main_menu')]])
-        )
-    else:
-        await query.delete_message()
-        await query.message.reply_text(
-            "Выбери действие:",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data='main_menu')]])
-        )
+    await query.edit_message_text(
+        caption,
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Главное меню", callback_data='main_menu')]])
+    )
 
 async def main_menu(query, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -402,8 +216,7 @@ async def instruction(query, context: ContextTypes.DEFAULT_TYPE):
         "• Уход за котиком: +3 монеты\n"
         "• Просмотр рекламы: +5 монет\n"
         "• Отзыв: +10 монет\n"
-        "• Приглашение друга: +15 монет\n"
-        "• Покупка за реальные деньги\n\n"
+        "• Приглашение друга: +15 монет\n\n"
         "💡 **СОВЕТЫ:**\n"
         "• Следи за показателями котика\n"
         "• Регулярно ухаживай за ним\n"
@@ -431,7 +244,6 @@ async def care_menu(query, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(f"🛁 Помыть (+{reward}🪙)", callback_data='care_clean')],
         [InlineKeyboardButton(f"🎮 Поиграть (+{reward}🪙)", callback_data='care_play')],
         [InlineKeyboardButton(f"💊 Лечить (+{reward}🪙)", callback_data='care_heal')],
-        [InlineKeyboardButton("📸 Фото котика", callback_data='care_photo')],
         [InlineKeyboardButton("🔙 Назад", callback_data='main_menu')]
     ]
     
@@ -459,14 +271,6 @@ async def handle_care_action(query, context: ContextTypes.DEFAULT_TYPE, action):
     
     if not user_data:
         await query.answer("❌ Ошибка загрузки профиля.")
-        return
-    
-    if action == 'photo':
-        caption = "Твой прекрасный котик! 😺"
-        photo_sent = await send_cat_photo(query.message.chat_id, context, user_data, caption)
-        
-        if not photo_sent:
-            await query.message.reply_text("Твой прекрасный котик! 😺\n(Не удалось загрузить фото)")
         return
     
     today = datetime.now().date().isoformat()
@@ -500,6 +304,7 @@ async def handle_care_action(query, context: ContextTypes.DEFAULT_TYPE, action):
     user_data['daily_care_count'] += 1
     cat['care_count'] += 1
     cat['last_update'] = datetime.now().isoformat()
+    bot_stats["total_care_actions"] += 1
     
     cat['exp'] += 1
     if cat['exp'] >= cat['level'] * 5:
@@ -531,7 +336,6 @@ async def earn_coins(query, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✍️ Написать отзыв (+10 монет)", callback_data='earn_review')],
         [InlineKeyboardButton("📢 Пригласить друга (+15 монет)", callback_data='earn_invite')],
         [InlineKeyboardButton("💖 Ухаживать за котиком", callback_data='care_menu')],
-        [InlineKeyboardButton("💎 Купить монеты", callback_data='buy_coins_menu')],
         [InlineKeyboardButton("🔙 Назад", callback_data='main_menu')]
     ]
     
@@ -544,8 +348,7 @@ async def earn_coins(query, context: ContextTypes.DEFAULT_TYPE):
         f"• Уход за котиком: +3 монеты\n"
         f"• Просмотр рекламы: +5 монет\n"
         f"• Отзыв: +10 монет\n"
-        f"• Приглашение друга: +15 монет\n"
-        f"• Покупка за реальные деньги",
+        f"• Приглашение друга: +15 монет",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -616,7 +419,6 @@ async def my_cat(query, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton("💖 Ухаживать (+3 монеты)", callback_data='care_menu')],
-        [InlineKeyboardButton("📸 Фото котика", callback_data='care_photo')],
         [InlineKeyboardButton("🔙 Назад", callback_data='main_menu')]
     ]
     
@@ -629,7 +431,6 @@ async def shop_menu(query, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🎮 Игрушки", callback_data='toys_shop')],
         [InlineKeyboardButton("🛏️ Лежанки", callback_data='beds_shop')],
-        [InlineKeyboardButton("💎 Купить монеты", callback_data='buy_coins_menu')],
         [InlineKeyboardButton("🔙 Назад", callback_data='main_menu')]
     ]
     
@@ -706,9 +507,6 @@ async def handle_buy_action(query, context: ContextTypes.DEFAULT_TYPE, item_id):
         category = 'beds_shop'
         price = item_data['price']
         user_balance = user_data['coins']
-    elif item_id in COIN_PACKAGES:
-        await start_payment(query, context, item_id)
-        return
     else:
         await query.answer("❌ Такого предмета нет в магазине!")
         return
@@ -800,29 +598,22 @@ async def handle_upgrade_action(query, context: ContextTypes.DEFAULT_TYPE, actio
         await query.answer("❌ Ошибка сохранения данных.")
 
 async def show_leaderboard(query, context: ContextTypes.DEFAULT_TYPE):
-    user_files = [f for f in os.listdir(USERS_PATH) if f.endswith('.json')]
-    users = []
+    users = get_all_users()
     
-    for user_file in user_files:
-        try:
-            user_id = int(user_file.split('.')[0])
-            user_data = get_user_data(user_id)
-            if user_data:
-                cat = user_data['cat']
-                rating = cat['level'] * 10 + cat['care_count']
-                user_data['calculated_rating'] = rating
-                users.append(user_data)
-        except:
-            continue
+    for user in users:
+        if 'cat' in user:
+            cat = user['cat']
+            rating = cat['level'] * 10 + cat['care_count']
+            user['calculated_rating'] = rating
     
-    users.sort(key=lambda x: x['calculated_rating'], reverse=True)
+    users.sort(key=lambda x: x.get('calculated_rating', 0), reverse=True)
     
     text = "📊 ТОП-10 ИГРОКОВ:\n\n"
     
     for i, user in enumerate(users[:10], 1):
-        username = user['username'] or f"Игрок {user['user_id']}"
-        cat = user['cat']
-        text += f"{i}. {username} - ⭐ Ур. {cat['level']} | ❤️ {cat['care_count']} уходов\n"
+        username = user.get('username', f"Игрок {user.get('user_id', 'Unknown')}")
+        cat = user.get('cat', {})
+        text += f"{i}. {username} - ⭐ Ур. {cat.get('level', 1)} | ❤️ {cat.get('care_count', 0)} уходов\n"
     
     if not users:
         text += "Пока никого в рейтинге!"
@@ -842,24 +633,24 @@ async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Мы всегда рады услышать твое мнение! 💖"
     )
 
-# Промокоды
-def load_promocodes():
-    if os.path.exists(PROMOCODES_PATH):
-        try:
-            with open(PROMOCODES_PATH, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user.id != ADMIN_ID:
+        return
+    
+    uptime = datetime.now() - datetime.fromisoformat(bot_stats["start_time"])
+    hours = uptime.total_seconds() / 3600
+    
+    stats_text = (
+        f"📊 СТАТИСТИКА БОТА:\n\n"
+        f"👥 Всего пользователей: {bot_stats['total_users']}\n"
+        f"❤️ Всего уходов: {bot_stats['total_care_actions']}\n"
+        f"⏰ Аптайм: {hours:.1f} часов\n"
+        f"🐱 Активных котиков: {len(users_db)}"
+    )
+    
+    await update.message.reply_text(stats_text)
 
-def save_promocodes(promocodes):
-    try:
-        with open(PROMOCODES_PATH, 'w', encoding='utf-8') as f:
-            json.dump(promocodes, f, ensure_ascii=False, indent=2)
-        return True
-    except:
-        return False
-
+# === Промокоды ===
 async def use_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
         await update.message.reply_text("❌ Использование: /promo <код>")
@@ -952,16 +743,68 @@ async def new_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     else:
         await update.message.reply_text("❌ Ошибка создания промокода!")
 
-# Автоматическое обновление показателей
+# === Обработчик кнопок ===
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    
+    if data == 'open_box':
+        await open_box(query, context)
+    elif data == 'main_menu':
+        await main_menu(query, context)
+    elif data == 'instruction':
+        await instruction(query, context)
+    elif data == 'care_menu':
+        await care_menu(query, context)
+    elif data == 'care_feed':
+        await handle_care_action(query, context, 'feed')
+    elif data == 'care_clean':
+        await handle_care_action(query, context, 'clean')
+    elif data == 'care_play':
+        await handle_care_action(query, context, 'play')
+    elif data == 'care_heal':
+        await handle_care_action(query, context, 'heal')
+    elif data == 'earn_coins':
+        await earn_coins(query, context)
+    elif data == 'earn_ad':
+        await handle_earn_action(query, context, 'ad')
+    elif data == 'earn_review':
+        await handle_earn_action(query, context, 'review')
+    elif data == 'earn_invite':
+        await handle_earn_action(query, context, 'invite')
+    elif data == 'my_cat':
+        await my_cat(query, context)
+    elif data == 'shop_menu':
+        await shop_menu(query, context)
+    elif data == 'toys_shop':
+        await toys_shop(query, context)
+    elif data == 'beds_shop':
+        await beds_shop(query, context)
+    elif data.startswith('buy_'):
+        item_id = data.replace('buy_', '')
+        await handle_buy_action(query, context, item_id)
+    elif data == 'upgrade_menu':
+        await upgrade_cat_menu(query, context)
+    elif data == 'upgrade_hunger':
+        await handle_upgrade_action(query, context, 'hunger')
+    elif data == 'upgrade_cleanliness':
+        await handle_upgrade_action(query, context, 'cleanliness')
+    elif data == 'upgrade_mood':
+        await handle_upgrade_action(query, context, 'mood')
+    elif data == 'upgrade_health':
+        await handle_upgrade_action(query, context, 'health')
+    elif data == 'leaderboard':
+        await show_leaderboard(query, context)
+
+# === Автообновление показателей ===
 async def auto_update_stats(context: ContextTypes.DEFAULT_TYPE):
-    user_files = [f for f in os.listdir(USERS_PATH) if f.endswith('.json')]
+    users = get_all_users()
     updated_count = 0
     
-    for user_file in user_files:
+    for user_data in users:
         try:
-            user_id = int(user_file.split('.')[0])
-            user_data = get_user_data(user_id)
-            
             if not user_data or 'cat' not in user_data:
                 continue
             
@@ -971,7 +814,7 @@ async def auto_update_stats(context: ContextTypes.DEFAULT_TYPE):
                 
             last_update = datetime.fromisoformat(cat['last_update'])
             
-            if datetime.now() - last_update > timedelta(hours=3):
+            if datetime.now() - last_update > timedelta(hours=6):  # Увеличили до 6 часов для оптимизации
                 cat['hunger'] = max(0, cat['hunger'] - 1)
                 cat['cleanliness'] = max(0, cat['cleanliness'] - 1)
                 cat['mood'] = max(0, cat['mood'] - 1)
@@ -985,16 +828,6 @@ async def auto_update_stats(context: ContextTypes.DEFAULT_TYPE):
                         'level': max(1, cat['level'] - 1),
                         'exp': 0
                     })
-                    
-                    try:
-                        await context.bot.send_message(
-                            chat_id=user_id,
-                            text="😿 Твой котик убежал из-за плохого ухода!\n"
-                                 "Но он вернулся немного ослабленным...\n"
-                                 "Пожалуйста, лучше ухаживай за ним!"
-                        )
-                    except:
-                        pass
                 
                 cat['last_update'] = datetime.now().isoformat()
                 
@@ -1002,98 +835,16 @@ async def auto_update_stats(context: ContextTypes.DEFAULT_TYPE):
                     updated_count += 1
                     
         except Exception as e:
-            logger.error(f"Ошибка обновления пользователя {user_file}: {e}")
             continue
     
     if updated_count > 0:
         logger.info(f"Автообновление: обновлено {updated_count} пользователей")
 
-# Обработчик кнопок
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    
-    data = query.data
-    
-    # Основное меню
-    if data == 'open_box':
-        await open_box(query, context)
-    elif data == 'main_menu':
-        await main_menu(query, context)
-    elif data == 'instruction':
-        await instruction(query, context)
-    
-    # Уход за котиком
-    elif data == 'care_menu':
-        await care_menu(query, context)
-    elif data == 'care_feed':
-        await handle_care_action(query, context, 'feed')
-    elif data == 'care_clean':
-        await handle_care_action(query, context, 'clean')
-    elif data == 'care_play':
-        await handle_care_action(query, context, 'play')
-    elif data == 'care_heal':
-        await handle_care_action(query, context, 'heal')
-    elif data == 'care_photo':
-        await handle_care_action(query, context, 'photo')
-    
-    # Заработок монет
-    elif data == 'earn_coins':
-        await earn_coins(query, context)
-    elif data == 'earn_ad':
-        await handle_earn_action(query, context, 'ad')
-    elif data == 'earn_review':
-        await handle_earn_action(query, context, 'review')
-    elif data == 'earn_invite':
-        await handle_earn_action(query, context, 'invite')
-    elif data == 'buy_coins_menu':
-        await buy_coins_menu(query, context)
-    
-    # Магазин
-    elif data == 'shop_menu':
-        await shop_menu(query, context)
-    elif data == 'toys_shop':
-        await toys_shop(query, context)
-    elif data == 'beds_shop':
-        await beds_shop(query, context)
-    elif data.startswith('buy_'):
-        item_id = data.replace('buy_', '')
-        await handle_buy_action(query, context, item_id)
-    
-    # Информация о котике
-    elif data == 'my_cat':
-        await my_cat(query, context)
-    
-    # Прокачка
-    elif data == 'upgrade_menu':
-        await upgrade_cat_menu(query, context)
-    elif data == 'upgrade_hunger':
-        await handle_upgrade_action(query, context, 'hunger')
-    elif data == 'upgrade_cleanliness':
-        await handle_upgrade_action(query, context, 'cleanliness')
-    elif data == 'upgrade_mood':
-        await handle_upgrade_action(query, context, 'mood')
-    elif data == 'upgrade_health':
-        await handle_upgrade_action(query, context, 'health')
-    
-    # Рейтинг
-    elif data == 'leaderboard':
-        await show_leaderboard(query, context)
-
+# === Основная функция ===
 def main() -> None:
-    # Создаем необходимые папки
-    os.makedirs(USERS_PATH, exist_ok=True)
-    
-    print("🚀 Запуск Kitty City Bot на Railway...")
-    print(f"📁 Рабочая директория: {SCRIPT_DIR}")
-    print(f"💾 Папка пользователей: {USERS_PATH}")
-    
-    # Проверяем переменные окружения
-    if not BOT_TOKEN or BOT_TOKEN == "8429919809:AAE5lMwVmH86X58JFDxYRPA3bDbFMgSgtsw":
-        print("⚠️  Внимание: Используется дефолтный токен бота")
-    
-    if not PAYMENT_PROVIDER_TOKEN:
-        print("⚠️  PAYMENT_PROVIDER_TOKEN не установлен, платежи недоступны")
+    print("🚀 Запуск Kitty City Bot на Replit...")
+    print("💾 Используется база данных в памяти")
+    print(f"🤖 Токен бота: {'установлен' if BOT_TOKEN else 'НЕ УСТАНОВЛЕН'}")
     
     # Создаем приложение
     application = Application.builder().token(BOT_TOKEN).build()
@@ -1103,25 +854,25 @@ def main() -> None:
     application.add_handler(CommandHandler("feedback", feedback))
     application.add_handler(CommandHandler("promo", use_promo_command))
     application.add_handler(CommandHandler("newpromo", new_promo_command))
-    
-    # Обработчики платежей
-    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment_handler))
+    application.add_handler(CommandHandler("stats", stats_command))
     
     # Обработчики кнопок
     application.add_handler(CallbackQueryHandler(button_handler))
     
-    # Автоматическое обновление показателей каждые 3 часа
+    # Автоматическое обновление показателей каждые 6 часов
     job_queue = application.job_queue
     if job_queue:
-        job_queue.run_repeating(auto_update_stats, interval=10800, first=10)
+        job_queue.run_repeating(auto_update_stats, interval=21600, first=10)
     
     print("✅ Бот успешно запущен!")
     print("🐱 Kitty City Bot готов к работе!")
+    print(f"👥 Пользователей в базе: {len(users_db)}")
     
     # Запускаем бота
-    application.run_polling()
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True
+    )
 
 if __name__ == '__main__':
-
     main()
-
